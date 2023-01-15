@@ -1,10 +1,14 @@
 require('dotenv').config(); 
+const md5 = require("md5");
 
 const express = require("express");
 const app = express();
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({extended : true}));
 app.use(express.static("public"));
+const bcrypt = require("bcrypt");
+const saltRounds = 10;
+
 
 const _ = require("lodash");
 
@@ -45,8 +49,8 @@ const userSchema = new Schema({
 })
 
 
-secret = process.env.SECRET;
-userSchema.plugin(encrypt,{secret:secret,encryptedFields:['password']});
+// secret = process.env.SECRET;
+// userSchema.plugin(encrypt,{secret:secret,encryptedFields:['password']});
 
 const User = model("User",userSchema);
 
@@ -80,13 +84,13 @@ app.get("/register",function(req,res){
 
 app.post("/register",function(req,res)
 {
-    const newUser = new User({
-        email : req.body.email,
-        name : req.body.name,
-        password :req.body.password
-    })
-
-    newUser.save(function(err)
+    bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
+        const newUser = new User({
+            email : req.body.email,
+            name : req.body.name,
+            password : hash
+        })
+        newUser.save(function(err)
     {
         if(err){
             console.log(err);
@@ -96,6 +100,8 @@ app.post("/register",function(req,res)
             res.render("user",{listTitle : req.body.name , new_items : db});
         }
     });
+    });
+    
 })
 
 app.post("/login",function(req,res){
@@ -114,14 +120,17 @@ app.post("/login",function(req,res){
             if(found)
             {
                 console.log("Login page 123");
-                if(found.password === password)
-                {
-                    res.render("user",{listTitle : req.body.name , new_items : db});
-                }
-                else
-                {
-                    res.render("login");
-                }
+                bcrypt.compare(password, found.password, function(err, result) {
+                    if(result === true)
+                    {
+                        res.render("user",{listTitle : req.body.name , new_items : db});
+                    }
+                    else
+                    {
+                        res.render("login");
+                    }
+                });
+                
             }
         }
     })
