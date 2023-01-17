@@ -1,74 +1,106 @@
-require('dotenv').config(); 
-const md5 = require("md5");
+require("dotenv").config();
+
 
 const express = require("express");
 const app = express();
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({extended : true}));
 app.use(express.static("public"));
-const bcrypt = require("bcrypt");
-const saltRounds = 10;
 
-
-const _ = require("lodash");
-
-const encrypt = require("mongoose-encryption");
 
 app.set('view engine', 'ejs');
+const _ = require("lodash");
+
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const findOrCreate = require("mongoose-findorcreate");
+
+
+const session = require("express-session");
+const passport = require("passport");
+const passportLocalMongoose = require("passport-local-mongoose");
+
+
+app.use(session({
+    secret : "Our little Secret",
+    resave : false,
+    saveUninitialized : false
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
 
 
 const mongoose = require('mongoose');
-// import List from "./model/List.js";
+
+
 mongoose.connect("mongodb+srv://mongo:mongo@cluster0.xrbupsy.mongodb.net/demo?retryWrites=true&w=majority");
 mongoose.set("strictQuery", true);
+
+
+
 const { Schema , SchemaTypes, model } = mongoose;
 
 
-// const schema = new Schema({
-//     todolist : String
-// })
-// const List = model("List",schema);
+const list = new Schema({
+    username : String,
+    heading : String,
+    title : String
+})
+const List = model("List",list);
 
 
 const base = new Schema({
     title : String,
-    lst : [String] 
+    lst : [String],
+    username : String
 })
 const Base = model("Base",base);
 
-// const user = new Schema({
-//     title : String,
-//     work : [{type: Schema.ObjectId, ref: 'Base'}] 
-// })
-// const User = model("User",user);
-
 const userSchema = new Schema({
-    email : String,
-    name : String,
-    password : String
+    username : String,
+    password : String,
+    googleId : String,
+    base : [{type: Schema.ObjectId, ref: 'Base'}] 
 })
 
+userSchema.plugin(passportLocalMongoose);
+userSchema.plugin(findOrCreate);
 
-// secret = process.env.SECRET;
-// userSchema.plugin(encrypt,{secret:secret,encryptedFields:['password']});
 
 const User = model("User",userSchema);
 
-const date = require(__dirname+"/date.js");
+passport.use(User.createStrategy());
+passport.serializeUser(function(user, done) {
+    done(null, user.id); 
+});
 
-// const s = new List({
-//     todolist : "",
-// });
+passport.deserializeUser(function(id, done) {
+    User.findById(id, function(err, user) {
+        done(err, user);
+    });
+});
+
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/todolist",
+    userProfileURL : "https://www.googleapis.com/oauth2/v3/userinfo"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
+
+const date = require(__dirname+"/date.js");
 
 const db = new Base({
     title : "",
     lst : []
 });
-
-// const u = new User({
-//     title : "",
-//     work : db
-// });
 
 app.get("/",function(req,res){
     res.render("home");
@@ -82,134 +114,170 @@ app.get("/register",function(req,res){
     res.render("register");
 })
 
-app.post("/register",function(req,res)
-{
-    bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
-        const newUser = new User({
-            email : req.body.email,
-            name : req.body.name,
-            password : hash
-        })
-        newUser.save(function(err)
-    {
+app.post("/login",function(req,res){
+    const user = new User({
+        username : req.body.username,
+        password : req.body.password
+    })
+    req.login(user,function(err){
+        
         if(err){
             console.log(err);
         }
-        else
-        {
-            res.render("user",{listTitle : req.body.name , new_items : db});
-        }
-    });
-    });
-    
-})
-
-app.post("/login",function(req,res){
-    const username = req.body.email;
-    const password = req.body.password;
-    
-    User.findOne({email : username},function(err,found)
-    {
-        
-        if(err)
-        {
-            console.log(err);
-        }
-        else
-        {
-            if(found)
-            {
-                console.log("Login page 123");
-                bcrypt.compare(password, found.password, function(err, result) {
-                    if(result === true)
+        else{
+            
+            passport.authenticate("local")(req,res,function(){
+                console.log(user);
+                Base.find({username : req.body.username},function(err,items){
+                    if(items.length===0)
                     {
-                        res.render("user",{listTitle : req.body.name , new_items : db});
+                        res.render("user",{listTitle : "Home",username : req.body.username , new_items : []});
                     }
                     else
                     {
-                        res.render("login");
+                        res.render("user",{listTitle : "Home",username : req.body.username , new_items : items});
                     }
-                });
+                })
                 
-            }
+            })
         }
     })
 })
 
-// app.get("/",function(req,res){
+app.post("/register",function(req,res)
+{
+    console.log("Sucess1");
+    User.register({username : req.body.username},req.body.password,function(err,user){
+        if(err)
+        {
+            console.log(err);
+            console.log("error");
+            res.redirect("/register");
+        }
+        else{
+            console.log("Success");
+            passport.authenticate("local")(req,res,function(){
+                console.log("Hello");
+                res.redirect("/"+req.body.username);
+            })
+        }
+    })
+    
+})
 
-//     // const day = date.getDate();
-//     Base.find({}, function(err, items) {
-//         if(items.length === 0)
-//         {
-//             res.render("home",{listTitle : "Home",new_items : []});
-//         }
-//         else
-//         {
-//             res.render("home",{listTitle : "Home",new_items : items});
-//         }
-//       });
-// });
+app.get("/logout", (req, res) => {
+    req.logout(req.user, err => {
+      if(err) return next(err);
+      res.redirect("/");
+    });
+  });
 
-// app.get("/:CustomTitle",function(req,res){
-//     console.log(req.params.CustomTitle);
-//     const customtitle = req.params.CustomTitle;
-//     Base.findOne({title : customtitle},function(err,found){
-//         if(!err)
-//         {
-//             // res.render("list",{listTitle : customtitle,new_items : found.lst});
-//             // console.log(found.lst);
-//         }
-//     })
-// })
+app.get("/:username",function(req,res){
+    const username = req.params.username;
+    if(req.isAuthenticated()){
+        Base.find({username : username}, function(err, items) {
+        if(items.length === 0)
+        {
+            res.render("user",{listTitle : "Home",username : username ,new_items : []});
+        }
+        else
+        {
+            res.render("user",{listTitle : "Home",username : username ,new_items : items});
+        }
+    });
+    }
+    else{
+        res.redirect("/login");
+    }
+})
 
-// app.post("/",function(req,res){
-//     let item = req.body.newItem;
-//     const t = req.body.list;
-//     if(t === "Home")
-//     {
-//         const i1 = new Base({
-//             title : item,
-//             lst : []
-//         })
-//         console.log(item);
-//         i1.save();
-//         res.redirect("/");
-//     }
-//     else
-//     {
-//         Base.findOneAndUpdate({title : t},{$push : {lst : item}},function(err,found){
-//             console.log(found+" 11111111111 "+t);
-//         })
-//         res.redirect("/"+t);
+app.get("/auth/google",
+  passport.authenticate('google', { scope: ["profile"] }));
+
+app.get('/auth/google/todolist',
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  function(req, res) {
+    console.log(req.user.id);
+    res.redirect('/'+req.user.id);
+  });
+
+
+app.get("/:username/:sublist",function(req,res){
+    const username = req.params.username;
+    const sublist = req.params.sublist;
+    if(req.isAuthenticated()){
+        List.find({username : username,heading : sublist}, function(err, items) {
+        if(items.length === 0)
+        {
+            res.render("sublist",{listTitle : sublist,username : username ,new_items : []});
+        }
+        else
+        {
+            res.render("sublist",{listTitle : sublist,username : username ,new_items : items});
+        }
+    });
+    }
+    else{
+        res.redirect("/login");
+    }
+})
+
+
+
+app.post("/",function(req,res){
+    const item = req.body.newItem;
+    const t = req.body.list;
+    if(t === "Home")
+    {
+        const i1 = new Base({
+            title : item,
+            lst : [],
+            username : req.body.username
+        })
+        console.log(i1);
+        i1.save();
+        res.redirect("/"+req.body.username);
+    }
+    else
+    {
+        const i1 = new List({
+            username : req.body.username,
+            heading : t,
+            title : item
+            
+        })
+        console.log(i1);
+        i1.save();
+        res.redirect("/"+req.body.username+"/"+t);
         
-//     }
+    }
     
 
-// })
+})
 
 
-// app.post("/delete",function(req,res){
-//     const del = req.body.checkbox;
-//     const title = req.body.listTitle;
-//     console.log(del+" 2222222222 "+title);
-//     if(title === "Home")
-//     {
-//         List.findByIdAndRemove(del,function(err)
-//         {
-//             console.log(err);
-//         })
-//         res.redirect("/");
-//     }
-//     else
-//     {
-//         Base.findOneAndUpdate({title : title},{$pull : {lst  : del}},function(err,found){
-//             console.log(err);
-//         })
-//         res.redirect("/"+title);
-//     }
+app.post("/delete",function(req,res){
+    const del = req.body.checkbox;
+    const title = req.body.listTitle;
+    const username = req.body.username;
+    if(title === "Home")
+    {
+        Base.findByIdAndRemove(del,function(err)
+        {
+            console.log(err);
+        })
+        res.redirect("/"+username);
+    }
+    else
+    {
+        List.findByIdAndRemove(del,function(err)
+        {
+            console.log(err);
+        })
+        res.redirect("/"+username+"/"+title);
+    }
     
-// })
+})
 
 app.listen(3000,function(){
     console.log("server is running at the port 3000");

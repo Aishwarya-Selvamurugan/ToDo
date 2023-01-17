@@ -1,24 +1,31 @@
 <%- include("header") -%>
+
+<a href="/logout" style="text-align: center; padding-left: 90%; padding-bottom: 100px;">logout</a>
+
     <div class="box" id="heading">
-        <h1><%= listTitle %></h1>
+        <h1><%= username %> <%= listTitle %></h1>
     </div>
 
     <div class="box">
         <% for(var i = 0;i<new_items.length;i++) {%>
         <form action="/delete" method = "post">
             <div class="item">
-                
-                <input type="checkbox" name="checkbox" onChange ="this.form.submit()" value = "<%= new_items[i]._id%>" id="">
-                <a href = "/<%= new_items[i].title %>"><%= new_items[i].title %></a>
+            <input type="checkbox" name="checkbox" onChange ="this.form.submit()" value = "<%= new_items[i]._id%>" id="">
+                <a href = "/<%= username %>/<%= new_items[i].title %>"><%= new_items[i].title %></a>
             </div>
             <input type="hidden" name="listTitle" value="<%= listTitle %>">
+            <input type="hidden" name="username" value="<%= username %>">
         </form>
         <% } %>
         
         <form class ="item" action="/" method="post">
             <input type="text" name="newItem" placeholder="New Item" autofocus autocomplete="off">
-            <button type="submit" name="list" value="<%= listTitle %>"">+</button>
+            <button type="submit" name="list" value="<%= listTitle %>">+</button>
+            <input type="hidden" name="username" value="<%= username %>">
         </form>
-    </div>
         
+    </div>
+    
+
+
     <%- include("footer") -%>
